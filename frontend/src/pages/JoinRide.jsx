@@ -5,7 +5,7 @@ import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import "../index.css";
 
-// 🧭 Leaflet icons fix
+// 🧭 Fix Leaflet icons
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl:
@@ -15,6 +15,9 @@ L.Icon.Default.mergeOptions({
   shadowUrl:
     "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png",
 });
+
+// ✅ Use backend base URL from environment
+const API_BASE_URL = import.meta.env.VITE_BACKEND_URL;
 
 const JoinRide = () => {
   const [pickup, setPickup] = useState("");
@@ -27,28 +30,28 @@ const JoinRide = () => {
 
   const currentUserId = localStorage.getItem("creatorId");
 
-  // ✅ Fetch 4 latest rides on mount (excluding user’s own)
+  // ✅ Fetch recent rides on mount (exclude user's own rides)
   useEffect(() => {
-    const fetchInitialRides = async () => {
+    const fetchRides = async () => {
       try {
-        const res = await fetch("http://localhost:5000/api/rides");
+        const res = await fetch(`${API_BASE_URL}/api/rides`);
         const data = await res.json();
 
-        // Sort newest first and take 4
-        const recent = data
+        // Exclude rides created by this user
+        const filtered = data
+          .filter((r) => r.creatorId !== currentUserId)
           .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-          .filter((ride) => ride.creatorId !== currentUserId)
-          .slice(0, 4);
+          .slice(0, 5);
 
-        setRides(recent);
+        setRides(filtered);
       } catch (err) {
-        console.error("Error loading rides:", err);
+        console.error("Error fetching rides:", err);
       }
     };
-    fetchInitialRides();
+    fetchRides();
   }, [currentUserId]);
 
-  // ✅ Fetch location suggestions
+  // 🔍 Fetch suggestions from OpenStreetMap (Nominatim)
   const fetchSuggestions = async (query, type) => {
     if (!query) return;
     try {
@@ -59,11 +62,10 @@ const JoinRide = () => {
       if (type === "pickup") setPickupSuggestions(data.slice(0, 5));
       else setDestinationSuggestions(data.slice(0, 5));
     } catch (err) {
-      console.error("Error fetching location:", err);
+      console.error("Error fetching suggestions:", err);
     }
   };
 
-  // ✅ Select suggestion
   const selectLocation = (place, type) => {
     if (type === "pickup") {
       setPickup(place.display_name);
@@ -76,23 +78,23 @@ const JoinRide = () => {
     }
   };
 
-  // ✅ Search rides manually
+  // ✅ Search rides (excluding own rides)
   const searchRides = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch("http://localhost:5000/api/rides/find", {
+      const res = await fetch(`${API_BASE_URL}/api/rides/find`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pickup, destination }),
       });
       const data = await res.json();
 
-      // Filter out own rides
-      const filtered = data.filter((ride) => ride.creatorId !== currentUserId);
+      // Filter out rides created by the current user
+      const filtered = data.filter((r) => r.creatorId !== currentUserId);
       setRides(filtered);
     } catch (err) {
-      console.error(err);
-      alert("Error fetching rides");
+      console.error("Error searching rides:", err);
+      alert("❌ Error fetching rides");
     }
   };
 
@@ -101,22 +103,24 @@ const JoinRide = () => {
     const name = prompt("Enter your name:");
     const contact = prompt("Enter your contact number:");
     const message = prompt("Add a message (optional):");
-    if (!name || !contact) return alert("Name and contact are required!");
+
+    if (!name || !contact) {
+      alert("Name and contact are required!");
+      return;
+    }
 
     try {
-      const res = await fetch(
-        `http://localhost:5000/api/rides/${rideId}/request`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, contact, message }),
-        }
-      );
+      const res = await fetch(`${API_BASE_URL}/api/rides/${rideId}/request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, contact, message }),
+      });
+
       const data = await res.json();
-      alert(data.message || "Request sent!");
+      alert(data.message || "✅ Request sent successfully!");
     } catch (err) {
-      console.error(err);
-      alert("Error sending request");
+      console.error("Error sending join request:", err);
+      alert("❌ Could not send join request");
     }
   };
 
@@ -127,6 +131,7 @@ const JoinRide = () => {
         {/* Search Form */}
         <div className="ride-form">
           <h2>Join a Ride</h2>
+
           <form onSubmit={searchRides}>
             <input
               type="text"
@@ -136,6 +141,7 @@ const JoinRide = () => {
                 setPickup(e.target.value);
                 fetchSuggestions(e.target.value, "pickup");
               }}
+              required
             />
             {pickupSuggestions.length > 0 && (
               <ul className="suggestions">
@@ -155,6 +161,7 @@ const JoinRide = () => {
                 setDestination(e.target.value);
                 fetchSuggestions(e.target.value, "destination");
               }}
+              required
             />
             {destinationSuggestions.length > 0 && (
               <ul className="suggestions">
@@ -172,7 +179,7 @@ const JoinRide = () => {
             <button type="submit">Search Rides</button>
           </form>
 
-          {/* Results */}
+          {/* Rides List */}
           {rides.length > 0 ? (
             <div className="rides-list">
               {rides.map((ride) => (
@@ -185,7 +192,11 @@ const JoinRide = () => {
                     <strong>To:</strong> {ride.destination}
                   </p>
                   <p>
-                    <strong>Seats:</strong> {ride.seatsAvailable}
+                    <strong>Date:</strong>{" "}
+                    {new Date(ride.datetime).toLocaleString()}
+                  </p>
+                  <p>
+                    <strong>Seats Available:</strong> {ride.seatsAvailable}
                   </p>
                   <button onClick={() => sendJoinRequest(ride._id)}>
                     Request to Join
@@ -194,7 +205,7 @@ const JoinRide = () => {
               ))}
             </div>
           ) : (
-            <p style={{ marginTop: "20px" }}>No rides found yet.</p>
+            <p style={{ marginTop: "20px" }}>No rides found.</p>
           )}
         </div>
 
@@ -213,7 +224,9 @@ const JoinRide = () => {
               <Marker position={[pickupCoords.lat, pickupCoords.lng]} />
             )}
             {destinationCoords && (
-              <Marker position={[destinationCoords.lat, destinationCoords.lng]} />
+              <Marker
+                position={[destinationCoords.lat, destinationCoords.lng]}
+              />
             )}
             {pickupCoords && destinationCoords && (
               <Polyline

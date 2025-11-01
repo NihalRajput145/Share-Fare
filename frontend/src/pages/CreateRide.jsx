@@ -5,7 +5,7 @@ import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import "../index.css";
 
-// Fix Leaflet marker issue
+// ✅ Fix Leaflet marker issue
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl:
@@ -33,11 +33,14 @@ const CreateRide = () => {
   const [destinationSuggestions, setDestinationSuggestions] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // 🆕 Generate and store unique creator ID if not present
+  // ✅ Backend URL (from .env)
+  const API_BASE_URL = import.meta.env.VITE_BACKEND_URL;
+
+  // 🆕 Generate & store a unique creator ID if not already stored
   useEffect(() => {
     let id = localStorage.getItem("creatorId");
     if (!id) {
-      id = Math.floor(100000 + Math.random() * 900000).toString(); // random 6-digit ID
+      id = Math.floor(100000 + Math.random() * 900000).toString();
       localStorage.setItem("creatorId", id);
     }
   }, []);
@@ -45,7 +48,7 @@ const CreateRide = () => {
   const handleChange = (e) =>
     setFormData({ ...formData, [e.target.name]: e.target.value });
 
-  // 🔍 Fetch location suggestions from Nominatim
+  // 🔍 Fetch location suggestions from Nominatim API
   const fetchSuggestions = async (query, type) => {
     if (!query) return;
     try {
@@ -79,14 +82,14 @@ const CreateRide = () => {
     const creatorId = localStorage.getItem("creatorId");
 
     try {
-      const response = await fetch("http://localhost:5000/api/rides/add", {
+      const response = await fetch(`${API_BASE_URL}/api/rides/add`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...formData,
           pickupCoords,
           destinationCoords,
-          creatorId, // 🆕 added here
+          creatorId, // ✅ Send creatorId from frontend
         }),
       });
 
@@ -108,7 +111,7 @@ const CreateRide = () => {
         alert(`❌ ${data.message || "Failed to create ride"}`);
       }
     } catch (err) {
-      console.error(err);
+      console.error("❌ Error creating ride:", err);
       alert("❌ Could not connect to backend");
     } finally {
       setLoading(false);
@@ -192,12 +195,14 @@ const CreateRide = () => {
               placeholder="Available Seats"
               value={formData.seatsAvailable}
               onChange={handleChange}
+              required
             />
             <input
               type="datetime-local"
               name="datetime"
               value={formData.datetime}
               onChange={handleChange}
+              required
             />
             <textarea
               name="notes"
@@ -225,9 +230,7 @@ const CreateRide = () => {
               <Marker position={[pickupCoords.lat, pickupCoords.lng]} />
             )}
             {destinationCoords && (
-              <Marker
-                position={[destinationCoords.lat, destinationCoords.lng]}
-              />
+              <Marker position={[destinationCoords.lat, destinationCoords.lng]} />
             )}
             {pickupCoords && destinationCoords && (
               <Polyline

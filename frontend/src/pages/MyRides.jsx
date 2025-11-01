@@ -5,7 +5,7 @@ import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import "../index.css";
 
-// Fix Leaflet icons
+// 🧭 Fix Leaflet icons (CDN links for marker)
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl:
@@ -16,6 +16,9 @@ L.Icon.Default.mergeOptions({
     "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png",
 });
 
+// ✅ Backend base URL
+const BASE_URL = import.meta.env.VITE_BACKEND_URL;
+
 const MyRides = () => {
   const [myRides, setMyRides] = useState([]);
   const [selectedRide, setSelectedRide] = useState(null);
@@ -25,75 +28,67 @@ const MyRides = () => {
 
   // ✅ Fetch rides created by this user
   useEffect(() => {
-    const fetchMyRides = async () => {
-      if (!creatorId) return;
-      setLoading(true);
-      try {
-        const res = await fetch(`http://localhost:5000/api/rides/my/${creatorId}`);
-        const data = await res.json();
-        setMyRides(data);
-      } catch (err) {
-        console.error("Error fetching rides:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
+    if (!creatorId) return;
     fetchMyRides();
   }, [creatorId]);
 
-  // ✅ Delete a ride
-  const deleteRide = async (rideId) => {
-    if (!window.confirm("Are you sure you want to delete this ride?")) return;
+  const fetchMyRides = async () => {
+    setLoading(true);
     try {
-      const res = await fetch(`http://localhost:5000/api/rides/${rideId}`, {
+      const res = await fetch(`${BASE_URL}/api/rides/my/${creatorId}`);
+      const data = await res.json();
+      setMyRides(data);
+    } catch (err) {
+      console.error("Error fetching rides:", err);
+      alert("❌ Failed to fetch your rides.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ✅ Delete ride with confirmation
+  const deleteRide = async (rideId) => {
+    const confirmDelete = window.confirm(
+      "Are you sure you want to delete this ride?"
+    );
+    if (!confirmDelete) return;
+
+    try {
+      const res = await fetch(`${BASE_URL}/api/rides/${rideId}`, {
         method: "DELETE",
       });
       const data = await res.json();
-      alert(data.message);
+      alert(data.message || "Ride deleted successfully!");
+
+      // Update UI instantly
       setMyRides((prev) => prev.filter((r) => r._id !== rideId));
       if (selectedRide?._id === rideId) setSelectedRide(null);
     } catch (err) {
-      console.error(err);
-      alert("Error deleting ride");
+      console.error("Error deleting ride:", err);
+      alert("❌ Could not delete ride.");
     }
   };
 
-  // ✅ Accept join request
-  const acceptRequest = async (rideId, index) => {
+  // ✅ Handle join request (accept/reject)
+  const handleRequest = async (rideId, index, action) => {
     try {
       const res = await fetch(
-        `http://localhost:5000/api/rides/${rideId}/accept/${index}`,
+        `${BASE_URL}/api/rides/${rideId}/${action}/${index}`,
         { method: "PATCH" }
       );
       const data = await res.json();
-      alert(data.message || "Join request accepted!");
+      alert(data.message || `Request ${action}ed successfully!`);
       refreshRides();
     } catch (err) {
-      console.error(err);
-      alert("Error accepting request");
+      console.error(`Error during ${action}:`, err);
+      alert(`❌ Error while trying to ${action} request.`);
     }
   };
 
-  // ✅ Reject join request
-  const rejectRequest = async (rideId, index) => {
-    try {
-      const res = await fetch(
-        `http://localhost:5000/api/rides/${rideId}/reject/${index}`,
-        { method: "PATCH" }
-      );
-      const data = await res.json();
-      alert(data.message || "Join request rejected!");
-      refreshRides();
-    } catch (err) {
-      console.error(err);
-      alert("Error rejecting request");
-    }
-  };
-
-  // ✅ Refresh rides after action
+  // ✅ Refresh rides list after changes
   const refreshRides = async () => {
     try {
-      const res = await fetch(`http://localhost:5000/api/rides/my/${creatorId}`);
+      const res = await fetch(`${BASE_URL}/api/rides/my/${creatorId}`);
       const data = await res.json();
       setMyRides(data);
       if (selectedRide) {
@@ -109,7 +104,7 @@ const MyRides = () => {
     <>
       <Navbar />
       <div className="create-ride-container">
-        {/* Left Panel */}
+        {/* Left Panel: List of Rides */}
         <div className="ride-form">
           <h2>My Created Rides</h2>
 
@@ -140,7 +135,14 @@ const MyRides = () => {
                       e.stopPropagation();
                       deleteRide(ride._id);
                     }}
-                    style={{ background: "#ff4444" }}
+                    style={{
+                      background: "#ff4444",
+                      border: "none",
+                      color: "#fff",
+                      padding: "8px 12px",
+                      borderRadius: "8px",
+                      cursor: "pointer",
+                    }}
                   >
                     Delete Ride
                   </button>
@@ -148,13 +150,15 @@ const MyRides = () => {
               ))}
             </div>
           ) : (
-            <p style={{ marginTop: "20px" }}>You haven’t created any rides yet.</p>
+            <p style={{ marginTop: "20px" }}>
+              You haven’t created any rides yet.
+            </p>
           )}
 
-          {/* Pending Join Requests */}
+          {/* Join Requests Section */}
           {selectedRide && selectedRide.pendingJoinRequests?.length > 0 && (
             <div className="ride-requests">
-              <h3>Join Requests for this ride</h3>
+              <h3>Join Requests for this Ride</h3>
               {selectedRide.pendingJoinRequests.map((req, idx) => (
                 <div
                   key={idx}
@@ -176,18 +180,25 @@ const MyRides = () => {
                     <strong>Message:</strong> {req.message || "—"}
                   </p>
                   <p>
-                    <strong>Status:</strong> {req.status}
+                    <strong>Status:</strong>{" "}
+                    <span style={{ textTransform: "capitalize" }}>
+                      {req.status}
+                    </span>
                   </p>
 
                   {req.status === "pending" && (
                     <div className="request-actions">
                       <button
-                        onClick={() => acceptRequest(selectedRide._id, idx)}
+                        onClick={() =>
+                          handleRequest(selectedRide._id, idx, "accept")
+                        }
                       >
                         Accept
                       </button>
                       <button
-                        onClick={() => rejectRequest(selectedRide._id, idx)}
+                        onClick={() =>
+                          handleRequest(selectedRide._id, idx, "reject")
+                        }
                         style={{ background: "#ff4444" }}
                       >
                         Reject
@@ -200,10 +211,10 @@ const MyRides = () => {
           )}
         </div>
 
-        {/* Right: Map View */}
+        {/* Right Panel: Map View */}
         <div className="map-container">
           <MapContainer
-            center={[19.076, 72.8777]}
+            center={[19.076, 72.8777]} // Default to Mumbai
             zoom={12}
             style={{ height: "100%", width: "100%" }}
           >
@@ -211,6 +222,7 @@ const MyRides = () => {
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               attribution='&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a>'
             />
+
             {selectedRide?.pickupCoords && (
               <Marker
                 position={[
@@ -219,6 +231,7 @@ const MyRides = () => {
                 ]}
               />
             )}
+
             {selectedRide?.destinationCoords && (
               <Marker
                 position={[
@@ -227,6 +240,7 @@ const MyRides = () => {
                 ]}
               />
             )}
+
             {selectedRide?.pickupCoords && selectedRide?.destinationCoords && (
               <Polyline
                 positions={[
